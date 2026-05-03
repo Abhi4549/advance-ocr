@@ -1,4 +1,6 @@
 streamlit
 pandas
 google-generativeai==0.7.2
+pydantic==2.8.2
+pydantic-core==2.20.1
 openpyxl
