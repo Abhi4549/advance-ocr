@@ -12,30 +12,51 @@ if "gemini" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
         
-        # List available models to debug
+        # List ALL available models first
+        st.sidebar.info("🔍 Scanning available models...")
         try:
-            available_model_list = genai.list_models()
-            model_names = [m.name.split('/')[-1] for m in available_model_list if 'generateContent' in m.supported_generation_methods]
-            st.sidebar.info(f"📋 Available models: {', '.join(model_names[:3])}")
-        except:
-            pass
-        
-        # Try most compatible older models
-        available_models = ['gemini-pro-vision', 'gemini-pro', 'gemini-1.5-flash']
-        model = None
-        selected_model = None
-        
-        for model_name in available_models:
-            try:
-                model = genai.GenerativeModel(model_name)
-                selected_model = model_name
-                st.sidebar.success(f"✅ AI Engine Ready ({model_name})")
-                break
-            except Exception as e:
-                continue
+            all_models = genai.list_models()
+            available_models_list = []
+            
+            for m in all_models:
+                model_name = m.name.split('/')[-1]
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models_list.append(model_name)
+            
+            st.sidebar.success(f"✅ Found {len(available_models_list)} models:\n{', '.join(available_models_list)}")
+            
+            # Try each available model
+            model = None
+            selected_model = None
+            
+            for model_name in available_models_list:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    selected_model = model_name
+                    st.sidebar.success(f"✅ AI Engine Ready ({model_name})")
+                    break
+                except Exception as e:
+                    continue
+                    
+        except Exception as e:
+            st.sidebar.warning(f"Could not list models: {e}")
+            # Fallback list if listModels fails
+            available_models_list = ['gemini-pro', 'gemini-1.5-pro', 'gemini-1.5-flash']
+            model = None
+            selected_model = None
+            
+            for model_name in available_models_list:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    selected_model = model_name
+                    st.sidebar.success(f"✅ AI Engine Ready ({model_name})")
+                    break
+                except:
+                    continue
         
         if not model:
-            st.sidebar.error("❌ No compatible Gemini model found. Please check available models.")
+            st.sidebar.error("❌ No compatible Gemini model found!")
+            
     except Exception as e:
         st.sidebar.error(f"❌ Connection Error: {e}")
 else:
@@ -57,7 +78,7 @@ with st.sidebar:
 st.subheader("Step 2: Bank Statement Extraction")
 bank_pdf = st.file_uploader("Upload Bank PDF", type=['pdf'])
 
-if bank_pdf:
+if bank_pdf and model:
     if st.button("🚀 EXECUTE AI EXTRACTION"):
         with st.spinner("AI is analyzing the statement..."):
             try:
@@ -83,4 +104,6 @@ if bank_pdf:
                     st.warning("AI couldn't find readable data.")
             except Exception as e:
                 st.error(f"⚠️ Technical Error: {e}")
-                st.info(f"📌 Using model: {selected_model}")
+                st.info(f"📌 Model used: {selected_model}")
+elif not model:
+    st.error("❌ AI model not initialized. Please check your API key and available models.")
