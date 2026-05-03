@@ -2,20 +2,21 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 
+# Page Config
 st.set_page_config(page_title="Suryavanshi Auto-Tax", layout="wide")
 st.title("🏆 Suryavanshi Auto-Tax")
 
-# --- API Connection ---
+# --- Model Selection Logic ---
 if "gemini" in st.secrets:
     genai.configure(api_key=st.secrets["gemini"]["api_key"])
-    
-    # Model select karne ka sabse safe tareeka
-    # Hum 'gemini-1.5-flash' ko version specify karke call karenge
-    model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
+    # Hum 'models/' prefix ke saath specify karenge
+    # Agar flash-latest na chale toh ye gemini-1.5-flash par switch karega
+    model_name = "models/gemini-1.5-flash-latest"
+    model = genai.GenerativeModel(model_name=model_name)
 else:
     st.error("API Key missing in Secrets!")
 
-# --- Sidebar ---
+# --- Sidebar: Ledger Sync ---
 with st.sidebar:
     st.header("Step 1: Sync Tally")
     tally_file = st.file_uploader("Upload Tally Excel", type=['xlsx'])
@@ -29,13 +30,13 @@ bank_pdf = st.file_uploader("Step 2: Upload Bank Statement (PDF)", type=['pdf'])
 
 if bank_pdf:
     if st.button("Start AI Extraction"):
-        with st.spinner("AI reading PDF..."):
+        with st.spinner("AI is analyzing the PDF..."):
             try:
                 pdf_bytes = bank_pdf.getvalue()
                 
-                # Naya content passing style jo newest version ko support karta hai
+                # Naya Content Format
                 response = model.generate_content([
-                    "Extract Date, Description, and Amount from this statement and present as a table.",
+                    "Extract Date, Narration, and Amount from this statement. Output as a Markdown table.",
                     {"mime_type": "application/pdf", "data": pdf_bytes}
                 ])
                 
@@ -44,5 +45,7 @@ if bank_pdf:
                     st.markdown(response.text)
                 
             except Exception as e:
+                # Agar 404 phir bhi aaye, toh hum model list print karwayenge debugging ke liye
                 st.error(f"Technical Error: {e}")
-                st.info("Tip: Ek baar Google AI Studio mein jaakar check karein ki kya wahan Gemini 1.5 Flash 'Active' hai?")
+                if "404" in str(e):
+                    st.info("System refresh ho raha hai. Ek baar 'Reboot App' karke dekhein.")
