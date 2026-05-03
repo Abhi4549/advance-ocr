@@ -2,16 +2,21 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 
+# Page Config
 st.set_page_config(page_title="Suryavanshi Auto-Tax", layout="wide")
 st.title("🏆 Suryavanshi Auto-Tax")
 
-# --- CONNECTION ---
+# --- API CONNECTION ---
 if "gemini" in st.secrets:
-    genai.configure(api_key=st.secrets["gemini"]["api_key"])
-    # Hum model ka pura path likhenge taaki 404 na aaye
-    model = genai.GenerativeModel(model_name="gemini-1.5-flash")
+    try:
+        # Direct configure Bina version mismatch ke
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        st.success("✅ Engine Connected!")
+    except Exception as e:
+        st.error(f"Config Error: {e}")
 else:
-    st.error("Secrets mein API Key nahi mili!")
+    st.error("API Key missing in Secrets!")
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -27,11 +32,11 @@ bank_pdf = st.file_uploader("Step 2: Upload Bank Statement (PDF)", type=['pdf'])
 
 if bank_pdf:
     if st.button("Start AI Extraction"):
-        with st.spinner("AI is reading PDF..."):
+        with st.spinner("AI is analyzing PDF..."):
             try:
                 pdf_bytes = bank_pdf.getvalue()
                 
-                # Naya content passing style
+                # Gemini 1.5 format
                 response = model.generate_content([
                     {"mime_type": "application/pdf", "data": pdf_bytes},
                     "Extract Date, Description, and Amount from this statement and give a table."
@@ -40,4 +45,4 @@ if bank_pdf:
                 if response.text:
                     st.markdown(response.text)
             except Exception as e:
-                st.error(f"Error: {e}")
+                st.error(f"Technical Error: {e}")
