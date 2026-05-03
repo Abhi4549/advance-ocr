@@ -11,7 +11,7 @@ if "gemini" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
         # Latest model for PDF processing
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         st.sidebar.success("✅ AI Engine Ready")
     except Exception as e:
         st.sidebar.error(f"❌ Connection Error: {e}")
