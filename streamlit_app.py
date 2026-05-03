@@ -2,47 +2,56 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 
-# UI Branding
+# --- PAGE SETUP ---
 st.set_page_config(page_title="Suryavanshi Auto-Tax Pro", layout="wide")
 st.markdown("<h1 style='text-align: center; color: #d4af37;'>🏆 SURYAVANSHI AUTO-TAX PRO</h1>", unsafe_allow_html=True)
 
-# API Setup
+# --- AI ENGINE ---
 if "gemini" in st.secrets:
-    api_key = st.secrets["gemini"]["api_key"]
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    try:
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        # Latest model for PDF processing
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        st.sidebar.success("✅ AI Engine Ready")
+    except Exception as e:
+        st.sidebar.error(f"❌ Connection Error: {e}")
 else:
-    st.error("API Key missing! Check Streamlit Secrets.")
+    st.error("❌ API Key missing! Check Streamlit Secrets.")
 
-# Sidebar: Tally Sync
+# --- SIDEBAR: TALLY SYNC ---
 with st.sidebar:
     st.header("Step 1: Sync Tally")
-    tally_file = st.file_uploader("Upload Tally Excel", type=['xlsx'])
+    tally_file = st.file_uploader("Upload Tally Masters (Excel)", type=['xlsx'])
     if tally_file:
-        df = pd.read_excel(tally_file)
-        st.session_state['ledgers'] = df.iloc[:, 0].dropna().unique().tolist()
-        st.success("Tally Masters Loaded!")
+        try:
+            df = pd.read_excel(tally_file)
+            st.session_state['ledgers'] = df.iloc[:, 0].dropna().unique().tolist()
+            st.success(f"✅ {len(st.session_state['ledgers'])} Ledgers Loaded")
+        except Exception as e:
+            st.error(f"Excel Error: {e}")
 
-# Main Section
+# --- MAIN: PDF EXTRACTION ---
 st.subheader("Step 2: Bank Statement Extraction")
 bank_pdf = st.file_uploader("Upload Bank PDF", type=['pdf'])
 
 if bank_pdf:
-    if st.button("🚀 EXECUTE EXTRACTION"):
-        with st.spinner("AI is reading... Please wait."):
+    if st.button("🚀 EXECUTE AI EXTRACTION"):
+        with st.spinner("AI is analyzing the statement..."):
             try:
-                pdf_data = bank_pdf.getvalue()
+                pdf_bytes = bank_pdf.getvalue()
                 
-                # Pro Prompt
+                # Instruction for the AI
+                prompt = "Extract all transactions into a Markdown table with columns: Date, Narration, Amount. Only provide the table."
+                
                 response = model.generate_content([
-                    {"mime_type": "application/pdf", "data": pdf_data},
-                    "Extract Date, Narration, and Amount from this statement. Provide only a Markdown table."
+                    {"mime_type": "application/pdf", "data": pdf_bytes},
+                    prompt
                 ])
                 
                 if response.text:
-                    st.success("Extraction Done!")
+                    st.success("🎯 Data Extracted Successfully!")
                     st.markdown(response.text)
                 else:
-                    st.warning("No text found.")
+                    st.warning("AI couldn't find readable data.")
             except Exception as e:
-                st.error(f"Technical Error: {e}")
+                st.error(f"⚠️ Technical Error: {e}")
