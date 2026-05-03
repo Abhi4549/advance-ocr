@@ -12,20 +12,30 @@ if "gemini" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
         
-        # Try available models in order
-        available_models = ['gemini-1.5-pro', 'gemini-pro', 'gemini-pro-vision']
+        # List available models to debug
+        try:
+            available_model_list = genai.list_models()
+            model_names = [m.name.split('/')[-1] for m in available_model_list if 'generateContent' in m.supported_generation_methods]
+            st.sidebar.info(f"📋 Available models: {', '.join(model_names[:3])}")
+        except:
+            pass
+        
+        # Try most compatible older models
+        available_models = ['gemini-pro-vision', 'gemini-pro', 'gemini-1.5-flash']
         model = None
+        selected_model = None
         
         for model_name in available_models:
             try:
                 model = genai.GenerativeModel(model_name)
+                selected_model = model_name
                 st.sidebar.success(f"✅ AI Engine Ready ({model_name})")
                 break
-            except:
+            except Exception as e:
                 continue
         
         if not model:
-            st.sidebar.error("❌ No compatible Gemini model found")
+            st.sidebar.error("❌ No compatible Gemini model found. Please check available models.")
     except Exception as e:
         st.sidebar.error(f"❌ Connection Error: {e}")
 else:
@@ -73,3 +83,4 @@ if bank_pdf:
                     st.warning("AI couldn't find readable data.")
             except Exception as e:
                 st.error(f"⚠️ Technical Error: {e}")
+                st.info(f"📌 Using model: {selected_model}")
