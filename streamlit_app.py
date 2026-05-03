@@ -2,23 +2,24 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 
-# Page Config
+# Page Configuration
 st.set_page_config(page_title="Suryavanshi Auto-Tax", layout="wide")
-st.title("🏆 Suryavanshi Auto-Tax")
+st.markdown("<h1 style='text-align: center; color: #d4af37;'>🏆 Suryavanshi Auto-Tax</h1>", unsafe_allow_html=True)
 
-# --- API CONNECTION ---
+# API Connection
 if "gemini" in st.secrets:
+    api_key = st.secrets["gemini"]["api_key"]
     try:
-        # Direct configure Bina version mismatch ke
-        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        genai.configure(api_key=api_key)
+        # Gemini 1.5 Flash use kar rahe hain jo fast aur compatible hai
         model = genai.GenerativeModel('gemini-1.5-flash')
-        st.success("✅ Engine Connected!")
+        st.sidebar.success("✅ AI Engine Connected!")
     except Exception as e:
-        st.error(f"Config Error: {e}")
+        st.sidebar.error(f"❌ Connection Error: {e}")
 else:
-    st.error("API Key missing in Secrets!")
+    st.error("❌ API Key missing in Secrets!")
 
-# --- SIDEBAR ---
+# Sidebar: Tally Sync
 with st.sidebar:
     st.header("Step 1: Sync Tally")
     tally_file = st.file_uploader("Upload Tally Excel", type=['xlsx'])
@@ -27,22 +28,24 @@ with st.sidebar:
         st.session_state['ledgers'] = df.iloc[:, 0].dropna().unique().tolist()
         st.success("Tally Masters Loaded!")
 
-# --- MAIN ---
+# Main Section
 bank_pdf = st.file_uploader("Step 2: Upload Bank Statement (PDF)", type=['pdf'])
 
 if bank_pdf:
-    if st.button("Start AI Extraction"):
-        with st.spinner("AI is analyzing PDF..."):
+    if st.button("🚀 Start AI Extraction"):
+        with st.spinner("AI reading PDF..."):
             try:
                 pdf_bytes = bank_pdf.getvalue()
                 
-                # Gemini 1.5 format
+                # AI Prompt
                 response = model.generate_content([
                     {"mime_type": "application/pdf", "data": pdf_bytes},
-                    "Extract Date, Description, and Amount from this statement and give a table."
+                    "Extract Date, Description, and Amount from this statement and show in a Markdown table."
                 ])
                 
                 if response.text:
+                    st.success("🎯 Data Extracted!")
                     st.markdown(response.text)
+                
             except Exception as e:
-                st.error(f"Technical Error: {e}")
+                st.error(f"⚠️ Technical Error: {e}")
