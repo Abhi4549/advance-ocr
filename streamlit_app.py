@@ -2,21 +2,23 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 
-# Page Config
 st.set_page_config(page_title="Suryavanshi Auto-Tax", layout="wide")
 st.title("🏆 Suryavanshi Auto-Tax")
 
-# --- Model Selection Logic ---
+# --- Nayi Key ke saath Connection ---
 if "gemini" in st.secrets:
-    genai.configure(api_key=st.secrets["gemini"]["api_key"])
-    # Hum 'models/' prefix ke saath specify karenge
-    # Agar flash-latest na chale toh ye gemini-1.5-flash par switch karega
-    model_name = "models/gemini-1.5-flash-latest"
-    model = genai.GenerativeModel(model_name=model_name)
+    try:
+        # Nayi library version v1 use karti hai jo stable hai
+        genai.configure(api_key=st.secrets["gemini"]["api_key"])
+        # 'models/gemini-1.5-flash' hi likhna hai
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        st.success("✅ Nayi API Key Connect Ho Gayi!")
+    except Exception as e:
+        st.error(f"Connection Error: {e}")
 else:
     st.error("API Key missing in Secrets!")
 
-# --- Sidebar: Ledger Sync ---
+# --- Sidebar ---
 with st.sidebar:
     st.header("Step 1: Sync Tally")
     tally_file = st.file_uploader("Upload Tally Excel", type=['xlsx'])
@@ -30,22 +32,19 @@ bank_pdf = st.file_uploader("Step 2: Upload Bank Statement (PDF)", type=['pdf'])
 
 if bank_pdf:
     if st.button("Start AI Extraction"):
-        with st.spinner("AI is analyzing the PDF..."):
+        with st.spinner("AI is reading PDF..."):
             try:
                 pdf_bytes = bank_pdf.getvalue()
                 
-                # Naya Content Format
+                # Simple extraction prompt
                 response = model.generate_content([
-                    "Extract Date, Narration, and Amount from this statement. Output as a Markdown table.",
+                    "Extract Date, Narration, and Amount from this statement. Give table.",
                     {"mime_type": "application/pdf", "data": pdf_bytes}
                 ])
                 
                 if response.text:
-                    st.success("Data mil gaya!")
                     st.markdown(response.text)
                 
             except Exception as e:
-                # Agar 404 phir bhi aaye, toh hum model list print karwayenge debugging ke liye
-                st.error(f"Technical Error: {e}")
-                if "404" in str(e):
-                    st.info("System refresh ho raha hai. Ek baar 'Reboot App' karke dekhein.")
+                st.error(f"Abhi bhi error hai: {e}")
+                st.info("Tip: GitHub mein requirements.txt mein 'google-generativeai>=0.5.4' zaroor likhein.")
