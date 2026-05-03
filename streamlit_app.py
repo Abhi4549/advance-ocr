@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
+import base64
 
 # --- PAGE SETUP ---
 st.set_page_config(page_title="Suryavanshi Auto-Tax Pro", layout="wide")
@@ -10,9 +11,21 @@ st.markdown("<h1 style='text-align: center; color: #d4af37;'>🏆 SURYAVANSHI AU
 if "gemini" in st.secrets:
     try:
         genai.configure(api_key=st.secrets["gemini"]["api_key"])
-        # Latest model for PDF processing
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        st.sidebar.success("✅ AI Engine Ready")
+        
+        # Try available models in order
+        available_models = ['gemini-1.5-pro', 'gemini-pro', 'gemini-pro-vision']
+        model = None
+        
+        for model_name in available_models:
+            try:
+                model = genai.GenerativeModel(model_name)
+                st.sidebar.success(f"✅ AI Engine Ready ({model_name})")
+                break
+            except:
+                continue
+        
+        if not model:
+            st.sidebar.error("❌ No compatible Gemini model found")
     except Exception as e:
         st.sidebar.error(f"❌ Connection Error: {e}")
 else:
@@ -39,12 +52,17 @@ if bank_pdf:
         with st.spinner("AI is analyzing the statement..."):
             try:
                 pdf_bytes = bank_pdf.getvalue()
+                pdf_base64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
                 
                 # Instruction for the AI
                 prompt = "Extract all transactions into a Markdown table with columns: Date, Narration, Amount. Only provide the table."
                 
+                # Use base64 encoded PDF
                 response = model.generate_content([
-                    {"mime_type": "application/pdf", "data": pdf_bytes},
+                    {
+                        "mime_type": "application/pdf",
+                        "data": pdf_base64,
+                    },
                     prompt
                 ])
                 
