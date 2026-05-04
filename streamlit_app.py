@@ -146,6 +146,7 @@ else:
                 search_col = 'Debit' if "Purchase" in audit_mode else 'Credit'
                 all_results = []
 
+                # Part A: Excel Audit
                 if tally_excel:
                     with st.spinner("Analyzing Excel rows..."):
                         try:
@@ -155,10 +156,11 @@ else:
                                 amt = pd.to_numeric(row.iloc[1], errors='coerce') or 0
                                 is_ex = not df_bank[df_bank[search_col] == amt].empty
                                 is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(p_name[:5], na=False)].empty
-                                stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
-                                all_results.append({"Source": "Excel", "Party": p_name, "Amount": amt, "Status": stat})
-                        except: st.error("Excel format error.")
+                                excel_stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
+                                all_results.append({"Source": "Excel", "Party": p_name, "Amount": amt, "Status": excel_stat})
+                        except Exception as e: st.error(f"Excel error: {e}")
 
+                # Part B: Bills Audit
                 if uploaded_bills:
                     genai.configure(api_key=st.secrets["gemini"]["api_key"])
                     available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -172,32 +174,34 @@ else:
                             b_prompt = 'Extract: {"Party_Name": str, "Short_Name": str, "Total_Amount": float}'
                             resp = model.generate_content([{"mime_type": m_type, "data": b_file.getvalue()}, b_prompt],
                                                          generation_config={"response_mime_type": "application/json"})
-                            bj = json.loads(resp.text)
-                            amt = float(bj.get('Total_Amount', 0))
-                            sn = bj.get('Short_Name', '').upper()
                             
-                            is_ex = not df_bank[df_bank[search_col] == amt].empty
-                            is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(sn, na=False)].empty if sn else False
-                            
-                            # FIXED: Ensuring variable name consistency
-                            final_stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
-                            
-                            all_results.append({
-                                "Source": b_file.name, 
-                                "Party": bj.get("Party_Name"), 
-                                "Amount": amt, 
-                                "Status": final_stat
-                            })
+                            if resp.text:
+                                bj = json.loads(resp.text)
+                                b_amt = float(bj.get('Total_Amount', 0))
+                                b_sn = bj.get('Short_Name', '').upper()
+                                
+                                is_ex_match = not df_bank[df_bank[search_col] == b_amt].empty
+                                is_nm_match = not df_bank[df_bank['Narration'].str.upper().str.contains(b_sn, na=False)].empty if b_sn else False
+                                
+                                bill_stat = "✅ PAID" if is_ex_match else ("🔍 PARTIAL" if is_nm_match else "❌ UNPAID")
+                                
+                                all_results.append({
+                                    "Source": b_file.name, 
+                                    "Party": bj.get("Party_Name"), 
+                                    "Amount": b_amt, 
+                                    "Status": bill_stat
+                                })
                             prog.progress((idx + 1) / len(uploaded_bills))
                         except Exception as e:
-                            all_results.append({"Source": b_file.name, "Status": "⚠️ ERROR"})
+                            all_results.append({"Source": b_file.name, "Party": "Error", "Amount": 0, "Status": "⚠️ ERROR"})
 
                 if all_results:
                     st.success("Bulk Audit Complete!")
                     res_df = pd.DataFrame(all_results)
+                    
                     def style_status(v):
-                        c = 'green' if 'PAID' in v and 'PARTIAL' not in v else ('orange' if 'PARTIAL' in v else 'red')
-                        return f'color: {c}; font-weight: bold'
+                        color = 'green' if 'PAID' in str(v) and 'PARTIAL' not in str(v) else ('orange' if 'PARTIAL' in str(v) else 'red')
+                        return f'color: {color}; font-weight: bold'
                     
                     st.dataframe(res_df.style.map(style_status, subset=['Status']), use_container_width=True)
-                    st.download_button("📥 Download Final Audit Report", res_df.to_csv(index=False), "master_audit.csv")
+                    st.download_button("📥 Download Final Audit Report", res_df.to_csv(index=False).encode('utf-8'), "master_audit.csv")
