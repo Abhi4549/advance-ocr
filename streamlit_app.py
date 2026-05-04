@@ -56,18 +56,17 @@ else:
                         pdf.save(out)
                         raw_bytes = out.getvalue()
 
-                # API Setup
+                # API Setup - Using Stable v1 path
                 genai.configure(api_key=st.secrets["gemini"]["api_key"])
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                # Simple AI Call
+                # AI Call
                 res = model.generate_content([
                     {"mime_type": "application/pdf", "data": raw_bytes},
                     "Extract all transactions into a JSON list with keys: Date, Narration, Amount."
                 ])
                 
                 if res.text:
-                    # Clean and Show
                     clean_json = res.text.replace('```json', '').replace('```', '').strip()
                     df = pd.read_json(io.StringIO(clean_json))
                     st.session_state['user_data']['used'] += len(df)
