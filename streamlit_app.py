@@ -146,21 +146,21 @@ else:
                 search_col = 'Debit' if "Purchase" in audit_mode else 'Credit'
                 all_results = []
 
-                # Part A: Excel Audit
+                # Excel Audit Logic
                 if tally_excel:
-                    with st.spinner("Analyzing Excel rows..."):
+                    with st.spinner("Analyzing Excel..."):
                         try:
                             ext_df = pd.read_excel(tally_excel)
                             for _, row in ext_df.iterrows():
-                                p_name = str(row.iloc[0]).upper()
-                                amt = pd.to_numeric(row.iloc[1], errors='coerce') or 0
-                                is_ex = not df_bank[df_bank[search_col] == amt].empty
-                                is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(p_name[:5], na=False)].empty
-                                excel_stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
-                                all_results.append({"Source": "Excel", "Party": p_name, "Amount": amt, "Status": excel_stat})
-                        except Exception as e: st.error(f"Excel error: {e}")
+                                e_pname = str(row.iloc[0]).upper()
+                                e_amt = pd.to_numeric(row.iloc[1], errors='coerce') or 0
+                                is_ex = not df_bank[df_bank[search_col] == e_amt].empty
+                                is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(e_pname[:5], na=False)].empty
+                                e_stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
+                                all_results.append({"Source": "Excel", "Party": e_pname, "Amount": e_amt, "Status": e_stat})
+                        except: st.error("Excel mapping error.")
 
-                # Part B: Bills Audit
+                # Batch Bill AI Logic
                 if uploaded_bills:
                     genai.configure(api_key=st.secrets["gemini"]["api_key"])
                     available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -169,6 +169,8 @@ else:
                     
                     prog = st.progress(0)
                     for idx, b_file in enumerate(uploaded_bills):
+                        # Default values for safety
+                        res_party, res_amt, res_stat = "Unknown", 0.0, "⚠️ ERROR"
                         try:
                             m_type = "application/pdf" if b_file.name.lower().endswith('pdf') else "image/jpeg"
                             b_prompt = 'Extract: {"Party_Name": str, "Short_Name": str, "Total_Amount": float}'
@@ -177,31 +179,25 @@ else:
                             
                             if resp.text:
                                 bj = json.loads(resp.text)
-                                b_amt = float(bj.get('Total_Amount', 0))
-                                b_sn = bj.get('Short_Name', '').upper()
+                                res_party = bj.get('Party_Name', 'Unknown')
+                                res_amt = float(bj.get('Total_Amount', 0))
+                                sn = bj.get('Short_Name', '').upper()
                                 
-                                is_ex_match = not df_bank[df_bank[search_col] == b_amt].empty
-                                is_nm_match = not df_bank[df_bank['Narration'].str.upper().str.contains(b_sn, na=False)].empty if b_sn else False
-                                
-                                bill_stat = "✅ PAID" if is_ex_match else ("🔍 PARTIAL" if is_nm_match else "❌ UNPAID")
-                                
-                                all_results.append({
-                                    "Source": b_file.name, 
-                                    "Party": bj.get("Party_Name"), 
-                                    "Amount": b_amt, 
-                                    "Status": bill_stat
-                                })
-                            prog.progress((idx + 1) / len(uploaded_bills))
-                        except Exception as e:
-                            all_results.append({"Source": b_file.name, "Party": "Error", "Amount": 0, "Status": "⚠️ ERROR"})
+                                is_ex_match = not df_bank[df_bank[search_col] == res_amt].empty
+                                is_nm_match = not df_bank[df_bank['Narration'].str.upper().str.contains(sn, na=False)].empty if sn else False
+                                res_stat = "✅ PAID" if is_ex_match else ("🔍 PARTIAL" if is_nm_match else "❌ UNPAID")
+                        except:
+                            pass # Keep default error values
+                            
+                        all_results.append({"Source": b_file.name, "Party": res_party, "Amount": res_amt, "Status": res_stat})
+                        prog.progress((idx + 1) / len(uploaded_bills))
 
                 if all_results:
                     st.success("Bulk Audit Complete!")
                     res_df = pd.DataFrame(all_results)
-                    
                     def style_status(v):
-                        color = 'green' if 'PAID' in str(v) and 'PARTIAL' not in str(v) else ('orange' if 'PARTIAL' in str(v) else 'red')
-                        return f'color: {color}; font-weight: bold'
+                        c = 'green' if 'PAID' in str(v) and 'PARTIAL' not in str(v) else ('orange' if 'PARTIAL' in str(v) else 'red')
+                        return f'color: {c}; font-weight: bold'
                     
                     st.dataframe(res_df.style.map(style_status, subset=['Status']), use_container_width=True)
-                    st.download_button("📥 Download Final Audit Report", res_df.to_csv(index=False).encode('utf-8'), "master_audit.csv")
+                    st.download_button("📥 Download Audit Report", res_df.to_csv(index=False).encode('utf-8'), "master_audit.csv")
