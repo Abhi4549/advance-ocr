@@ -175,12 +175,22 @@ else:
                             bj = json.loads(resp.text)
                             amt = float(bj.get('Total_Amount', 0))
                             sn = bj.get('Short_Name', '').upper()
+                            
                             is_ex = not df_bank[df_bank[search_col] == amt].empty
                             is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(sn, na=False)].empty if sn else False
-                            stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
-                            all_results.append({"Source": b_file.name, "Party": bj.get("Party_Name"), "Amount": amt, "Status": status})
+                            
+                            # FIXED: Ensuring variable name consistency
+                            final_stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
+                            
+                            all_results.append({
+                                "Source": b_file.name, 
+                                "Party": bj.get("Party_Name"), 
+                                "Amount": amt, 
+                                "Status": final_stat
+                            })
                             prog.progress((idx + 1) / len(uploaded_bills))
-                        except: all_results.append({"Source": b_file.name, "Status": "⚠️ ERROR"})
+                        except Exception as e:
+                            all_results.append({"Source": b_file.name, "Status": "⚠️ ERROR"})
 
                 if all_results:
                     st.success("Bulk Audit Complete!")
@@ -189,6 +199,5 @@ else:
                         c = 'green' if 'PAID' in v and 'PARTIAL' not in v else ('orange' if 'PARTIAL' in v else 'red')
                         return f'color: {c}; font-weight: bold'
                     
-                    # FIXED: Used .map() instead of .applymap()
                     st.dataframe(res_df.style.map(style_status, subset=['Status']), use_container_width=True)
                     st.download_button("📥 Download Final Audit Report", res_df.to_csv(index=False), "master_audit.csv")
