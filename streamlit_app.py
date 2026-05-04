@@ -116,7 +116,6 @@ else:
                             status_box.empty()
                             st.success(f"✅ Audit Successful! {len(df)} entries.")
                             
-                            # Metrics Dashboard
                             c1, c2, c3 = st.columns(3)
                             c1.metric("🔴 Total Debit", f"₹ {df['Debit'].sum():,.2f}")
                             c2.metric("🟢 Total Credit", f"₹ {df['Credit'].sum():,.2f}")
@@ -147,7 +146,6 @@ else:
                 search_col = 'Debit' if "Purchase" in audit_mode else 'Credit'
                 all_results = []
 
-                # Part A: Excel Audit
                 if tally_excel:
                     with st.spinner("Analyzing Excel rows..."):
                         try:
@@ -161,7 +159,6 @@ else:
                                 all_results.append({"Source": "Excel", "Party": p_name, "Amount": amt, "Status": stat})
                         except: st.error("Excel format error.")
 
-                # Part B: Bills Audit
                 if uploaded_bills:
                     genai.configure(api_key=st.secrets["gemini"]["api_key"])
                     available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
@@ -181,7 +178,7 @@ else:
                             is_ex = not df_bank[df_bank[search_col] == amt].empty
                             is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(sn, na=False)].empty if sn else False
                             stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
-                            all_results.append({"Source": b_file.name, "Party": bj.get("Party_Name"), "Amount": amt, "Status": stat})
+                            all_results.append({"Source": b_file.name, "Party": bj.get("Party_Name"), "Amount": amt, "Status": status})
                             prog.progress((idx + 1) / len(uploaded_bills))
                         except: all_results.append({"Source": b_file.name, "Status": "⚠️ ERROR"})
 
@@ -191,5 +188,7 @@ else:
                     def style_status(v):
                         c = 'green' if 'PAID' in v and 'PARTIAL' not in v else ('orange' if 'PARTIAL' in v else 'red')
                         return f'color: {c}; font-weight: bold'
-                    st.dataframe(res_df.style.applymap(style_status, subset=['Status']), use_container_width=True)
+                    
+                    # FIXED: Used .map() instead of .applymap()
+                    st.dataframe(res_df.style.map(style_status, subset=['Status']), use_container_width=True)
                     st.download_button("📥 Download Final Audit Report", res_df.to_csv(index=False), "master_audit.csv")
