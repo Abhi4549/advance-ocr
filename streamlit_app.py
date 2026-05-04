@@ -73,11 +73,36 @@ else:
         if "gemini" not in st.secrets:
             st.error("System Error: API Key missing in Streamlit Secrets!")
         else:
-            with st.spinner("AI is scanning bulk entries and mapping to Tally ledgers..."):
+            with st.spinner("AI Engine is authenticating and mapping ledgers..."):
                 try:
                     # 1. API Configuration
                     genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    
+                    # --- THE 404 ERROR KILLER (Auto-Detect Logic) ---
+                    available_models = []
+                    for m in genai.list_models():
+                        if 'generateContent' in m.supported_generation_methods:
+                            available_models.append(m.name)
+                    
+                    # Find the exact name Google wants for the 1.5 model
+                    target_model = None
+                    for name in available_models:
+                        if '1.5-flash' in name:
+                            target_model = name
+                            break
+                    if not target_model: # Fallback if flash is somehow unavailable
+                        for name in available_models:
+                            if '1.5-pro' in name:
+                                target_model = name
+                                break
+                                
+                    if not target_model:
+                        st.error("Your API Key does not support PDF extraction models.")
+                        st.stop()
+                        
+                    model = genai.GenerativeModel(target_model)
+                    st.info(f"Connected securely to model: {target_model}")
+                    # ------------------------------------------------
                     
                     # 2. PDF Decryption
                     raw_bytes = bank_pdf.getvalue()
@@ -87,7 +112,7 @@ else:
                             pdf.save(out)
                             raw_bytes = out.getvalue()
                     
-                    # 3. AI Extraction Prompt (Ye string poori tarah closed hai)
+                    # 3. AI Extraction Prompt
                     audit_prompt = "Extract all bank transactions into a strict JSON list. Fields required: 'Date', 'Narration', 'Amount'. Output ONLY valid JSON."
                     response = model.generate_content([
                         {"mime_type": "application/pdf", "data": raw_bytes},
