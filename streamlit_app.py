@@ -12,8 +12,14 @@ USER_DB = {
 # --- UI CONFIGURATION ---
 st.set_page_config(page_title="BizOps Auto-Tax Engine", layout="wide")
 
+# --- SAFE MEMORY INITIALIZATION (ERROR FIX) ---
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
+if 'user' not in st.session_state:
+    st.session_state['user'] = "guest"
+if 'user_data' not in st.session_state:
+    # Default memory set kar di taaki app kabhi KeyError na de
+    st.session_state['user_data'] = {"pwd": "", "plan": "Platinum", "used": 0, "limit": 10000}
 
 # --- SECURE LOGIN PORTAL ---
 if not st.session_state['logged_in']:
@@ -26,7 +32,7 @@ if not st.session_state['logged_in']:
             if u in USER_DB and p == USER_DB[u]["pwd"]:
                 st.session_state['logged_in'] = True
                 st.session_state['user'] = u
-                st.session_state['user_data'] = USER_DB[u]
+                st.session_state['user_data'] = USER_DB[u]  # Memory updated with actual data
                 st.rerun()
             else:
                 st.error("Authentication Failed. Invalid Credentials!")
@@ -36,13 +42,16 @@ else:
     u_data = st.session_state['user_data']
 
     with st.sidebar:
-        st.header(f"👤 ADVOCATE AJAY")
+        st.header(f"👤 {user.upper()}")
         st.write(f"**Tier:** {u_data['plan']}")
         st.progress(min(u_data['used'] / u_data['limit'], 1.0))
         st.write(f"**Bulk Quota:** {u_data['used']} / {u_data['limit']}")
         st.markdown("---")
         if st.button("Logout", use_container_width=True):
+            # Logout par memory clear karein
             st.session_state['logged_in'] = False
+            st.session_state['user'] = "guest"
+            st.session_state['user_data'] = {"pwd": "", "plan": "Platinum", "used": 0, "limit": 10000}
             st.rerun()
 
     st.title("📊 Auto-Tax Bank Statement Auditor")
@@ -82,20 +91,17 @@ else:
                     available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                     
                     target_model = None
-                    # Priority 1: Try to find 1.5 Flash (Best for PDF)
                     for name in available_models:
-                        if '1.5-flash' in name:
+                        if '1.5-flash' in name or '2.5-flash' in name:
                             target_model = name
                             break
                     
-                    # Priority 2: If Flash is missing, try 1.5 Pro
                     if not target_model:
                         for name in available_models:
                             if '1.5-pro' in name:
                                 target_model = name
                                 break
                     
-                    # Priority 3: Fallback to ANY available Gemini model your key supports
                     if not target_model:
                         for name in available_models:
                             if 'gemini' in name:
@@ -142,6 +148,8 @@ else:
                             return "SUSPENSE ACCOUNT"
                         
                         df['Tally_Ledger'] = df['Narration'].apply(match_ledger)
+                        
+                        # --- SAFE QUOTA UPDATE ---
                         st.session_state['user_data']['used'] += len(df)
                         
                         st.success(f"✅ Audit Successful! Auto-mapped {len(df)} bulk entries.")
@@ -151,6 +159,4 @@ else:
                         st.download_button("📥 Download Final XML/CSV for Tally", csv_data, "tally_bulk_import.csv", use_container_width=True)
                         
                 except Exception as e:
-                    # Agar purana model PDF direct upload support nahi karta, toh ye pakad lega
                     st.error(f"Engine Exception: {e}")
-                    st.warning("Hint: If it says 'mime_type not supported', your current API key's model cannot read PDFs directly. You MUST generate a new API key.")
