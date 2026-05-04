@@ -36,7 +36,7 @@ else:
     u_data = st.session_state['user_data']
 
     with st.sidebar:
-        st.header(f"👤 {user.upper()}")
+        st.header(f"👤 ADVOCATE AJAY")
         st.write(f"**Tier:** {u_data['plan']}")
         st.progress(min(u_data['used'] / u_data['limit'], 1.0))
         st.write(f"**Bulk Quota:** {u_data['used']} / {u_data['limit']}")
@@ -73,36 +73,42 @@ else:
         if "gemini" not in st.secrets:
             st.error("System Error: API Key missing in Streamlit Secrets!")
         else:
-            with st.spinner("AI Engine is authenticating and mapping ledgers..."):
+            with st.spinner("AI is bypassing API limits and mapping ledgers..."):
                 try:
                     # 1. API Configuration
                     genai.configure(api_key=st.secrets["gemini"]["api_key"])
                     
-                    # --- THE 404 ERROR KILLER (Auto-Detect Logic) ---
-                    available_models = []
-                    for m in genai.list_models():
-                        if 'generateContent' in m.supported_generation_methods:
-                            available_models.append(m.name)
+                    # --- SMART AUTO-FALLBACK MODEL SELECTOR ---
+                    available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                     
-                    # Find the exact name Google wants for the 1.5 model
                     target_model = None
+                    # Priority 1: Try to find 1.5 Flash (Best for PDF)
                     for name in available_models:
                         if '1.5-flash' in name:
                             target_model = name
                             break
-                    if not target_model: # Fallback if flash is somehow unavailable
+                    
+                    # Priority 2: If Flash is missing, try 1.5 Pro
+                    if not target_model:
                         for name in available_models:
                             if '1.5-pro' in name:
                                 target_model = name
                                 break
+                    
+                    # Priority 3: Fallback to ANY available Gemini model your key supports
+                    if not target_model:
+                        for name in available_models:
+                            if 'gemini' in name:
+                                target_model = name
+                                break
                                 
                     if not target_model:
-                        st.error("Your API Key does not support PDF extraction models.")
+                        st.error("❌ Critical Error: Your API Key is fully restricted. Please generate a new key at aistudio.google.com")
                         st.stop()
                         
                     model = genai.GenerativeModel(target_model)
-                    st.info(f"Connected securely to model: {target_model}")
-                    # ------------------------------------------------
+                    st.info(f"Connected to dynamic model: {target_model}")
+                    # ---------------------------------------------------------
                     
                     # 2. PDF Decryption
                     raw_bytes = bank_pdf.getvalue()
@@ -113,7 +119,8 @@ else:
                             raw_bytes = out.getvalue()
                     
                     # 3. AI Extraction Prompt
-                    audit_prompt = "Extract all bank transactions into a strict JSON list. Fields required: 'Date', 'Narration', 'Amount'. Output ONLY valid JSON."
+                    audit_prompt = "Extract all bank transactions into a strict JSON list. Fields required: 'Date', 'Narration', 'Amount'. Output ONLY valid JSON without markdown formatting."
+                    
                     response = model.generate_content([
                         {"mime_type": "application/pdf", "data": raw_bytes},
                         audit_prompt
@@ -144,4 +151,6 @@ else:
                         st.download_button("📥 Download Final XML/CSV for Tally", csv_data, "tally_bulk_import.csv", use_container_width=True)
                         
                 except Exception as e:
-                    st.error(f"Critical Engine Exception: {e}")
+                    # Agar purana model PDF direct upload support nahi karta, toh ye pakad lega
+                    st.error(f"Engine Exception: {e}")
+                    st.warning("Hint: If it says 'mime_type not supported', your current API key's model cannot read PDFs directly. You MUST generate a new API key.")
