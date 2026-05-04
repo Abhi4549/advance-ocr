@@ -1,4 +1,5 @@
 streamlit
-google-generativeai
 pandas
-openpyxl
+google-generativeai
+pikepdf
+st-paywall
