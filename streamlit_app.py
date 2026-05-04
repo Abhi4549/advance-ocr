@@ -4,7 +4,7 @@ import google.generativeai as genai
 import io
 import pikepdf
 
-# --- USER DATABASE ---
+# --- LOGIN DATABASE ---
 USER_DB = {
     "advocate_ajay": {"pwd": "admin123", "plan": "Platinum", "used": 0, "limit": 5000},
 }
@@ -17,27 +17,30 @@ if 'logged_in' not in st.session_state:
 
 # --- LOGIN LOGIC ---
 if not st.session_state['logged_in']:
-    st.markdown("<h1 style='text-align: center;'>🔐 SURYAVANSHI LOGIN</h1>", unsafe_allow_html=True)
-    u = st.text_input("Username")
-    p = st.text_input("Password", type='password')
-    if st.button("Access Dashboard"):
-        if u in USER_DB and p == USER_DB[u]["pwd"]:
-            st.session_state['logged_in'] = True
-            st.session_state['user'] = u
-            st.session_state['user_data'] = USER_DB[u]
-            st.rerun()
-        else:
-            st.error("Invalid Credentials!")
+    st.markdown("<h1 style='text-align: center; color: #d4af37;'>🔐 SURYAVANSHI LOGIN</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1,1.5,1])
+    with col2:
+        u = st.text_input("Username")
+        p = st.text_input("Password", type='password')
+        if st.button("Access Dashboard"):
+            if u in USER_DB and p == USER_DB[u]["pwd"]:
+                st.session_state['logged_in'] = True
+                st.session_state['user'] = u
+                st.session_state['user_data'] = USER_DB[u]
+                st.rerun()
+            else:
+                st.error("Invalid Credentials!")
 else:
     # --- DASHBOARD AREA ---
     user = st.session_state['user']
     u_data = st.session_state['user_data']
 
-    st.sidebar.title(f"👤 {user.upper()}")
-    st.sidebar.write(f"Usage: {u_data['used']} / {u_data['limit']}")
-    if st.sidebar.button("Logout"):
-        st.session_state['logged_in'] = False
-        st.rerun()
+    with st.sidebar:
+        st.header(f"👤 {user.upper()}")
+        st.write(f"Usage: {u_data['used']} / {u_data['limit']}")
+        if st.button("Logout"):
+            st.session_state['logged_in'] = False
+            st.rerun()
 
     st.title("🏆 Bank Statement Auditor")
     
@@ -56,22 +59,23 @@ else:
                         pdf.save(out)
                         raw_bytes = out.getvalue()
 
-                # API Setup - Using Stable v1 path
+                # API Setup - Stable Path
                 genai.configure(api_key=st.secrets["gemini"]["api_key"])
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
                 # AI Call
                 res = model.generate_content([
                     {"mime_type": "application/pdf", "data": raw_bytes},
-                    "Extract all transactions into a JSON list with keys: Date, Narration, Amount."
+                    "Extract all transactions into a JSON list with keys: Date, Narration, Amount. Return ONLY JSON."
                 ])
                 
                 if res.text:
                     clean_json = res.text.replace('```json', '').replace('```', '').strip()
                     df = pd.read_json(io.StringIO(clean_json))
                     st.session_state['user_data']['used'] += len(df)
-                    st.success(f"Success! Found {len(df)} entries.")
+                    st.success(f"Found {len(df)} entries!")
                     st.dataframe(df, use_container_width=True)
+                    st.download_button("📥 Download CSV", df.to_csv(index=False).encode('utf-8'), "audit.csv")
                     
             except Exception as e:
                 st.error(f"Technical Error: {e}")
