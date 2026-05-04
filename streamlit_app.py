@@ -62,7 +62,6 @@ else:
     if tally_file:
         try:
             ld_df = pd.read_excel(tally_file)
-            # Assuming ledgers are in the first column
             ledgers = ld_df.iloc[:, 0].dropna().astype(str).tolist()
             st.success(f"✅ Tally Sync Complete! {len(ledgers)} Ledgers loaded.")
         except Exception as e:
@@ -88,7 +87,7 @@ else:
                             pdf.save(out)
                             raw_bytes = out.getvalue()
                     
-                    # 3. AI Extraction Prompt
+                    # 3. AI Extraction Prompt (Ye string poori tarah closed hai)
                     audit_prompt = "Extract all bank transactions into a strict JSON list. Fields required: 'Date', 'Narration', 'Amount'. Output ONLY valid JSON."
                     response = model.generate_content([
                         {"mime_type": "application/pdf", "data": raw_bytes},
@@ -97,13 +96,12 @@ else:
                     
                     # 4. JSON Processing & Auto-Mapping
                     if response.text:
-                        clean_json = response.text.replace('
-```json', '').replace('```', '').strip()
+                        clean_json = response.text.replace('```json', '').replace('```', '').strip()
                         df = pd.read_json(io.StringIO(clean_json))
                         
                         # ADVANCED FEATURE: Suspense Account Mapping Logic
                         def match_ledger(narration):
-                            if not ledgers: # Agar Excel upload nahi ki
+                            if not ledgers:
                                 return "SUSPENSE ACCOUNT"
                             narr_upper = str(narration).upper()
                             for l in ledgers:
@@ -111,17 +109,12 @@ else:
                                     return l
                             return "SUSPENSE ACCOUNT"
                         
-                        # Apply mapping to dataframe
                         df['Tally_Ledger'] = df['Narration'].apply(match_ledger)
-                        
-                        # Update Quota
                         st.session_state['user_data']['used'] += len(df)
                         
-                        # Display Results
                         st.success(f"✅ Audit Successful! Auto-mapped {len(df)} bulk entries.")
                         st.dataframe(df, use_container_width=True)
                         
-                        # Export for Tally
                         csv_data = df.to_csv(index=False).encode('utf-8')
                         st.download_button("📥 Download Final XML/CSV for Tally", csv_data, "tally_bulk_import.csv", use_container_width=True)
                         
