@@ -10,7 +10,7 @@ USER_DB = {
 }
 
 # --- UI CONFIGURATION ---
-st.set_page_config(page_title="BizOps Audit Engine", layout="wide")
+st.set_page_config(page_title="BizOps Auto-Tax Engine", layout="wide")
 
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -39,65 +39,91 @@ else:
         st.header(f"👤 {user.upper()}")
         st.write(f"**Tier:** {u_data['plan']}")
         st.progress(min(u_data['used'] / u_data['limit'], 1.0))
-        st.write(f"**Quota:** {u_data['used']} / {u_data['limit']}")
+        st.write(f"**Bulk Quota:** {u_data['used']} / {u_data['limit']}")
         st.markdown("---")
         if st.button("Logout", use_container_width=True):
             st.session_state['logged_in'] = False
             st.rerun()
 
     st.title("📊 Auto-Tax Bank Statement Auditor")
+    st.markdown("Upload your Tally Masters and Bank PDF to auto-map bulk entries.")
     
-    # File Uploaders
-    bank_pdf = st.file_uploader("Upload Bank Statement (PDF)", type=['pdf'])
-    pdf_pwd = st.text_input("PDF Password (Leave empty if no password)", type="password")
+    # --- ADVANCED INPUTS ---
+    colA, colB = st.columns(2)
+    with colA:
+        tally_file = st.file_uploader("1. Sync Tally Masters (Excel)", type=['xlsx'])
+    with colB:
+        bank_pdf = st.file_uploader("2. Upload Bank Statement (PDF)", type=['pdf'])
+    
+    pdf_pwd = st.text_input("3. PDF Password (If protected)", type="password")
 
-    if bank_pdf and st.button("🚀 Process Statement", use_container_width=True):
+    # --- TALLY LEDGER LOGIC ---
+    ledgers = []
+    if tally_file:
+        try:
+            ld_df = pd.read_excel(tally_file)
+            # Assuming ledgers are in the first column
+            ledgers = ld_df.iloc[:, 0].dropna().astype(str).tolist()
+            st.success(f"✅ Tally Sync Complete! {len(ledgers)} Ledgers loaded.")
+        except Exception as e:
+            st.error("Error reading Tally Excel. Please ensure ledgers are in the first column.")
+
+    # --- BULK PROCESS EXECUTION ---
+    if bank_pdf and st.button("🚀 Process Bulk Entries", use_container_width=True):
         
-        # --- GEMINI API INTEGRATION START ---
-        # 1. Sabse pehle API Key check karte hain
         if "gemini" not in st.secrets:
             st.error("System Error: API Key missing in Streamlit Secrets!")
         else:
-            with st.spinner("AI Engine is auditing the document..."):
+            with st.spinner("AI is scanning bulk entries and mapping to Tally ledgers..."):
                 try:
-                    # 2. SDK Configure karna
+                    # 1. API Configuration
                     genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                    
-                    # 3. Stable Model Load karna
                     model = genai.GenerativeModel('gemini-1.5-flash')
                     
-                    # 4. PDF Data Prepare karna
+                    # 2. PDF Decryption
                     raw_bytes = bank_pdf.getvalue()
                     if pdf_pwd:
-                        # Agar password hai, toh pehle usko unlock karo
                         with pikepdf.open(io.BytesIO(raw_bytes), password=pdf_pwd) as pdf:
                             out = io.BytesIO()
                             pdf.save(out)
                             raw_bytes = out.getvalue()
                     
-                    # 5. API ko Document aur Prompt bhejna
-                    audit_prompt = "Extract all transactions into a strict JSON list. Keys required: Date, Narration, Amount. Output ONLY the JSON."
+                    # 3. AI Extraction Prompt
+                    audit_prompt = "Extract all bank transactions into a strict JSON list. Fields required: 'Date', 'Narration', 'Amount'. Output ONLY valid JSON."
                     response = model.generate_content([
                         {"mime_type": "application/pdf", "data": raw_bytes},
                         audit_prompt
                     ])
                     
-                    # 6. Response ko CSV/Dataframe mein convert karna
+                    # 4. JSON Processing & Auto-Mapping
                     if response.text:
-                        # Extra text (jaise markdown backticks) ko clean karna
-                        clean_json = response.text.replace('```json', '').replace('```', '').strip()
+                        clean_json = response.text.replace('
+```json', '').replace('```', '').strip()
                         df = pd.read_json(io.StringIO(clean_json))
                         
-                        # Quota update karna
+                        # ADVANCED FEATURE: Suspense Account Mapping Logic
+                        def match_ledger(narration):
+                            if not ledgers: # Agar Excel upload nahi ki
+                                return "SUSPENSE ACCOUNT"
+                            narr_upper = str(narration).upper()
+                            for l in ledgers:
+                                if l.upper() in narr_upper:
+                                    return l
+                            return "SUSPENSE ACCOUNT"
+                        
+                        # Apply mapping to dataframe
+                        df['Tally_Ledger'] = df['Narration'].apply(match_ledger)
+                        
+                        # Update Quota
                         st.session_state['user_data']['used'] += len(df)
                         
-                        st.success(f"Audit Successful! Processed {len(df)} transactions.")
+                        # Display Results
+                        st.success(f"✅ Audit Successful! Auto-mapped {len(df)} bulk entries.")
                         st.dataframe(df, use_container_width=True)
                         
-                        # Download Button
+                        # Export for Tally
                         csv_data = df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Export for Tally (CSV)", csv_data, "tally_import.csv", use_container_width=True)
+                        st.download_button("📥 Download Final XML/CSV for Tally", csv_data, "tally_bulk_import.csv", use_container_width=True)
                         
                 except Exception as e:
                     st.error(f"Critical Engine Exception: {e}")
-        # --- GEMINI API INTEGRATION END ---
