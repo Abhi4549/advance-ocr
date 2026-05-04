@@ -39,7 +39,6 @@ if not st.session_state['logged_in']:
             else:
                 st.error("Authentication Failed. Invalid Credentials!")
 else:
-    # --- AUTO-TAX DASHBOARD ---
     user = st.session_state['user']
     u_data = st.session_state['user_data']
 
@@ -53,14 +52,14 @@ else:
             st.session_state.clear()
             st.rerun()
 
-    st.title("📊 BizOps Auto-Tax & Bulk Bill Scanner")
+    st.title("📊 BizOps Auto-Tax & Master Auditor")
     
-    feature_tab1, feature_tab2 = st.tabs(["🏦 1. Bank Statement & Tally Sync", "📦 2. Bulk AI Bill Scanner"])
+    tab1, tab2 = st.tabs(["🏦 1. Bank Statement & Tally Sync", "📦 2. Bulk Audit (Bills/Excel)"])
 
     # ==========================================
-    # TAB 1: BANK AUDIT (DYNAMIC MODEL FIX)
+    # TAB 1: BANK STATEMENT & TALLY SYNC
     # ==========================================
-    with feature_tab1:
+    with tab1:
         st.markdown("### Bank Audit & Tally Ledger Mapping")
         colA, colB = st.columns(2)
         with colA:
@@ -86,25 +85,18 @@ else:
                 with st.spinner("AI is bypassing limits..."):
                     try:
                         genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                        
-                        # --- DYNAMIC MODEL SELECTOR (THE FIX) ---
                         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
                         target_model = next((m for m in available_models if 'flash' in m), available_models[0])
                         model = genai.GenerativeModel(target_model)
-                        st.info(f"Connected to: {target_model}")
                         
                         raw_bytes = bank_pdf.getvalue()
                         if pdf_pwd:
                             with pikepdf.open(io.BytesIO(raw_bytes), password=pdf_pwd) as pdf:
-                                out = io.BytesIO()
-                                pdf.save(out); raw_bytes = out.getvalue()
+                                out = io.BytesIO(); pdf.save(out); raw_bytes = out.getvalue()
                         
-                        audit_prompt = "Extract bank transactions. Return ONLY JSON array. Keys: 'Date', 'Narration', 'Debit', 'Credit'."
-                        
-                        response = model.generate_content(
-                            [{"mime_type": "application/pdf", "data": raw_bytes}, audit_prompt],
-                            generation_config={"response_mime_type": "application/json"}
-                        )
+                        audit_prompt = "Extract transactions. Return ONLY JSON array. Keys: 'Date', 'Narration', 'Debit', 'Credit'."
+                        response = model.generate_content([{"mime_type": "application/pdf", "data": raw_bytes}, audit_prompt],
+                                                         generation_config={"response_mime_type": "application/json"})
                         
                         if response.text:
                             df = pd.DataFrame(json.loads(response.text))
@@ -123,56 +115,81 @@ else:
                             
                             status_box.empty()
                             st.success(f"✅ Audit Successful! {len(df)} entries.")
-                            st.dataframe(df, use_container_width=True)
                             
-                    except Exception as e:
-                        st.error(f"Engine Exception: {e}")
+                            # Metrics Dashboard
+                            c1, c2, c3 = st.columns(3)
+                            c1.metric("🔴 Total Debit", f"₹ {df['Debit'].sum():,.2f}")
+                            c2.metric("🟢 Total Credit", f"₹ {df['Credit'].sum():,.2f}")
+                            c3.metric("🏦 Balance", f"₹ {(df['Credit'].sum() - df['Debit'].sum()):,.2f}")
+                            
+                            st.dataframe(df, use_container_width=True)
+                            st.download_button("📥 Download Tally CSV", df.to_csv(index=False).encode('utf-8'), "bank_audit.csv")
+                    except Exception as e: st.error(f"Engine Exception: {e}")
 
     # ==========================================
-    # TAB 2: BULK BILL SCANNER (DYNAMIC MODEL FIX)
+    # TAB 2: MASTER BULK AUDIT (BILLS & EXCEL)
     # ==========================================
-    with feature_tab2:
-        st.markdown("### 📦 Bulk Payment Audit")
-        bill_type = st.radio("Invoice Type:", ["Purchase (I paid)", "Sales (I received)"], horizontal=True)
-        uploaded_bills = st.file_uploader("Upload Batch", type=['png', 'jpg', 'jpeg', 'pdf'], accept_multiple_files=True)
+    with tab2:
+        st.markdown("### 📦 Bulk Audit (Verify Payments/Receipts)")
+        audit_mode = st.radio("Audit Type:", ["Purchase (Payment I made)", "Sales (Payment I received)"], horizontal=True)
         
-        if uploaded_bills and st.button("🔎 Batch Process", use_container_width=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            tally_excel = st.file_uploader("Option A: Upload Tally Outstanding Excel", type=['xlsx'])
+        with col2:
+            uploaded_bills = st.file_uploader("Option B: Upload Batch of Bills", type=['png', 'jpg', 'jpeg', 'pdf'], accept_multiple_files=True)
+        
+        if (tally_excel or uploaded_bills) and st.button("🔎 Start Bulk Audit", use_container_width=True):
             if st.session_state['bank_data'] is None:
                 st.error("Pehle Tab 1 process karein!")
             else:
-                genai.configure(api_key=st.secrets["gemini"]["api_key"])
-                
-                # Dynamic Model Fix for Tab 2
-                available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-                target_model = next((m for m in available_models if 'flash' in m), available_models[0])
-                model = genai.GenerativeModel(target_model)
-                
+                df_bank = st.session_state['bank_data']
+                search_col = 'Debit' if "Purchase" in audit_mode else 'Credit'
                 all_results = []
-                prog = st.progress(0)
-                for idx, b_file in enumerate(uploaded_bills):
-                    try:
-                        m_type = "application/pdf" if b_file.name.lower().endswith('pdf') else "image/jpeg"
-                        b_prompt = 'Extract details. Return ONLY JSON: {"Party_Name": str, "Short_Name": str, "Total_Amount": float}'
-                        
-                        resp = model.generate_content(
-                            [{"mime_type": m_type, "data": b_file.getvalue()}, b_prompt],
-                            generation_config={"response_mime_type": "application/json"}
-                        )
-                        
-                        if resp.text:
+
+                # Part A: Excel Audit
+                if tally_excel:
+                    with st.spinner("Analyzing Excel rows..."):
+                        try:
+                            ext_df = pd.read_excel(tally_excel)
+                            for _, row in ext_df.iterrows():
+                                p_name = str(row.iloc[0]).upper()
+                                amt = pd.to_numeric(row.iloc[1], errors='coerce') or 0
+                                is_ex = not df_bank[df_bank[search_col] == amt].empty
+                                is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(p_name[:5], na=False)].empty
+                                stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
+                                all_results.append({"Source": "Excel", "Party": p_name, "Amount": amt, "Status": stat})
+                        except: st.error("Excel format error.")
+
+                # Part B: Bills Audit
+                if uploaded_bills:
+                    genai.configure(api_key=st.secrets["gemini"]["api_key"])
+                    available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+                    target_model = next((m for m in available_models if 'flash' in m), available_models[0])
+                    model = genai.GenerativeModel(target_model)
+                    
+                    prog = st.progress(0)
+                    for idx, b_file in enumerate(uploaded_bills):
+                        try:
+                            m_type = "application/pdf" if b_file.name.lower().endswith('pdf') else "image/jpeg"
+                            b_prompt = 'Extract: {"Party_Name": str, "Short_Name": str, "Total_Amount": float}'
+                            resp = model.generate_content([{"mime_type": m_type, "data": b_file.getvalue()}, b_prompt],
+                                                         generation_config={"response_mime_type": "application/json"})
                             bj = json.loads(resp.text)
                             amt = float(bj.get('Total_Amount', 0))
                             sn = bj.get('Short_Name', '').upper()
-                            
-                            db = st.session_state['bank_data']
-                            col = 'Debit' if "Purchase" in bill_type else 'Credit'
-                            
-                            is_ex = not db[db[col] == amt].empty
-                            is_nm = not db[db['Narration'].str.upper().str.contains(sn, na=False)].empty if sn else False
+                            is_ex = not df_bank[df_bank[search_col] == amt].empty
+                            is_nm = not df_bank[df_bank['Narration'].str.upper().str.contains(sn, na=False)].empty if sn else False
                             stat = "✅ PAID" if is_ex else ("🔍 PARTIAL" if is_nm else "❌ UNPAID")
-                            
-                            all_results.append({"File": b_file.name, "Party": bj.get("Party_Name"), "Amount": amt, "Status": stat})
-                        prog.progress((idx + 1) / len(uploaded_bills))
-                    except: all_results.append({"File": b_file.name, "Status": "⚠️ ERROR"})
+                            all_results.append({"Source": b_file.name, "Party": bj.get("Party_Name"), "Amount": amt, "Status": stat})
+                            prog.progress((idx + 1) / len(uploaded_bills))
+                        except: all_results.append({"Source": b_file.name, "Status": "⚠️ ERROR"})
 
-                st.dataframe(pd.DataFrame(all_results), use_container_width=True)
+                if all_results:
+                    st.success("Bulk Audit Complete!")
+                    res_df = pd.DataFrame(all_results)
+                    def style_status(v):
+                        c = 'green' if 'PAID' in v and 'PARTIAL' not in v else ('orange' if 'PARTIAL' in v else 'red')
+                        return f'color: {c}; font-weight: bold'
+                    st.dataframe(res_df.style.applymap(style_status, subset=['Status']), use_container_width=True)
+                    st.download_button("📥 Download Final Audit Report", res_df.to_csv(index=False), "master_audit.csv")
